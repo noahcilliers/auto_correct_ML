@@ -3,10 +3,12 @@ Minimal text editor with an autocorrect hook.
 
 Run:  python3 editor.py
 
-All ML lives in autocorrect.py. This file only does three things:
+All ML lives in autocorrect.py. This file only does four things:
   1. shows a window with a plain Text widget
   2. notices when you finish typing a word (space / newline / punctuation)
   3. hands that word to autocorrect.correct() and swaps in the result
+  4. underlines every word spellcheck.is_misspelled() flags, re-checking
+     the whole (small) document shortly after each change
 
 Cmd+Z (Ctrl+Z on other platforms) undoes the last correction, then normal typing.
 Type :q on its own line and press Enter to quit, vim-style (:q! works too).
@@ -16,12 +18,17 @@ import tkinter as tk
 import tkinter.font as tkfont
 
 from autocorrect import correct
+from spellcheck import is_misspelled
 
 # A word is letters, digits and apostrophes. Anything else typed right after
 # a word (space, newline, punctuation) ends the word and triggers a check.
-WORD_RE = re.compile(r"[\w'’]+$")
+ANY_WORD_RE = re.compile(r"[\w'’]+")            # every word in a line
+WORD_RE = re.compile(ANY_WORD_RE.pattern + "$")  # the word a line ends with
 
 BROWN = "#a86f3b"  # header and body text colour
+CREAM = "#f5cf9a"  # underline for misspelled words
+
+RECHECK_DELAY_MS = 150  # wait for typing to pause before re-scanning
 
 
 def is_word_boundary(event) -> bool:
@@ -64,6 +71,10 @@ class Editor:
         self.text.pack(expand=True, fill="y", pady=24)
         self.text.focus_set()
 
+        # Misspelled words get a coloured underline (underlinefg needs Tk 8.6.6+).
+        self.text.tag_configure("misspelled", underline=True, underlinefg=CREAM)
+        self._recheck_job = None
+
         # Tk runs key bindings tag by tag: widget -> "Text" class -> toplevel -> all.
         # The "Text" class binding is the one that actually inserts the typed
         # character. We add our own tag right after it, so by the time our
@@ -80,6 +91,10 @@ class Editor:
 
         # Fires on any change to the buffer: typing, paste, undo, our replacements.
         self.text.bind("<<Modified>>", self._on_modified)
+        # Moving the cursor off a half-typed word (arrows, click) should
+        # check it too, even though the buffer didn't change.
+        self.text.bind("<KeyRelease>", self._schedule_recheck)
+        self.text.bind("<ButtonRelease-1>", self._schedule_recheck)
 
     def _on_modified(self, event):
         if not self.text.edit_modified():
@@ -87,6 +102,26 @@ class Editor:
         n = len(self.text.get("1.0", "end-1c").split())
         self.count.config(text=f"{n} word{'s' if n != 1 else ''}")
         self.text.edit_modified(False)  # re-arm so the next change fires again
+        self._schedule_recheck()
+
+    def _schedule_recheck(self, event=None):
+        # Debounce: many keystrokes in quick succession -> one scan.
+        if self._recheck_job is not None:
+            self.root.after_cancel(self._recheck_job)
+        self._recheck_job = self.root.after(RECHECK_DELAY_MS, self._recheck)
+
+    def _recheck(self):
+        self._recheck_job = None
+        self.text.tag_remove("misspelled", "1.0", "end")
+        cursor = self.text.index("insert")
+        lines = self.text.get("1.0", "end-1c").split("\n")
+        for lineno, line in enumerate(lines, start=1):
+            for m in ANY_WORD_RE.finditer(line):
+                end = f"{lineno}.{m.end()}"
+                if end == cursor:
+                    continue  # still being typed; judge it once it's finished
+                if is_misspelled(m.group(), line[:m.start()]):
+                    self.text.tag_add("misspelled", f"{lineno}.{m.start()}", end)
 
     def _on_return(self, event):
         # Vim-style quit: a line that is just ":q" (or ":q!") followed by Enter.
