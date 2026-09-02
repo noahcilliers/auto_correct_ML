@@ -1,0 +1,6 @@
+name: auto_correct
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - tk
