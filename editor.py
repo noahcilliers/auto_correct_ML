@@ -40,11 +40,17 @@ class Editor:
         root.geometry("800x600")
 
         font = ("Courier New", 14)
-        # Header: coffee + name, top left, coffee-brown.
+        # Header: coffee + name on the left, word count on the right.
+        header = tk.Frame(root)
+        header.pack(fill="x")
         header_font = tkfont.nametofont("TkDefaultFont").copy()
         header_font.configure(size=13, weight="bold")
-        tk.Label(root, text="\u2615 Crema", font=header_font, fg=BROWN,
-                 anchor="w", padx=12, pady=12).pack(fill="x")
+        tk.Label(header, text="\u2615 Crema", font=header_font, fg=BROWN,
+                 padx=12, pady=12).pack(side="left")
+        count_font = tkfont.nametofont("TkDefaultFont").copy()
+        count_font.configure(size=12)
+        self.count = tk.Label(header, text="0 words", font=count_font, fg=BROWN, padx=12)
+        self.count.pack(side="right")
         # "systemGridColor" is a subtle line in both light and dark mode.
         tk.Frame(root, height=1, bg="systemGridColor").pack(fill="x")
 
@@ -71,6 +77,16 @@ class Editor:
 
         # Widget-level binding: runs *before* the Text class inserts the newline.
         self.text.bind("<Return>", self._on_return)
+
+        # Fires on any change to the buffer: typing, paste, undo, our replacements.
+        self.text.bind("<<Modified>>", self._on_modified)
+
+    def _on_modified(self, event):
+        if not self.text.edit_modified():
+            return  # resetting the flag below re-fires this event; ignore that one
+        n = len(self.text.get("1.0", "end-1c").split())
+        self.count.config(text=f"{n} word{'s' if n != 1 else ''}")
+        self.text.edit_modified(False)  # re-arm so the next change fires again
 
     def _on_return(self, event):
         # Vim-style quit: a line that is just ":q" (or ":q!") followed by Enter.
