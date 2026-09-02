@@ -54,8 +54,23 @@ def correct(word: str, context: str) -> str | None:
 - Called once each time you finish a word (you type a space, newline, or punctuation right after it).
 - `word` is the word you just typed. `context` is all document text before it.
 - Return the replacement, or `None` to leave the word alone.
-- The editor swaps the word in place. Cmd+Z undoes the correction.
+- The editor does **not** swap the word in. It strikes the word through in a
+  faded brown and shows your prediction right after it in cream.
 - Quit vim-style: type `:q` (or `:q!`) on its own line and press Enter.
+
+## Accepting a prediction
+
+| When | Accept | Reject |
+|---|---|---|
+| Cursor still right after the prediction | `Tab` | `Esc` |
+| Any time | left-click it | right-click it |
+
+Accepting replaces the word with the prediction. Rejecting removes the
+prediction and puts the word back to normal, still underlined since the
+dictionary doesn't know it. Editing the struck-through word by hand drops the
+prediction. Cmd+Z undoes an accept and brings the original word back.
+
+Predictions don't count towards the word count.
 - Every correction is printed to the terminal as `'teh' -> 'the'` so you can watch what the model is doing.
 
 `correct()` runs on the UI thread, so keep it fast (well under ~50 ms per word) or typing will stutter. Load your model once at module import time, not inside `correct()`.
