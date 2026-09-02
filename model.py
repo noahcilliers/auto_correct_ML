@@ -4,7 +4,8 @@ import sys
 import random
 from torch import nn
 import torch.nn.functional as F
-from spellcheck.py import FREQUENCIES
+from spellcheck import FREQUENCIES
+import re
 
 
 # ok so how are we going to transform this long list into an actual voacabullary???
@@ -18,6 +19,7 @@ WORD_EMB_DIM = 20 * CHAR_EMB_DIM
 #
 # OK lets get the data in now
 #
+ok = re.compile(r"^[a-z][a-z']*[a-z]$")
 pairs = [(w, c) for w, c in FREQUENCIES.items() if ok.match(w) and 2 <= len(w) <= 20]
 words = [w for w, _ in pairs]                          # list of ~83k str
 weights = np.array([c for _, c in pairs], dtype=np.float64) ** 0.4
@@ -134,7 +136,7 @@ class Decoder(nn.Module):
         self.emb = emb
         self.lstm = StackedLSTM(embedding_dim, hidden_dim, num_layers)
         self.out = nn.Linear(hidden_dim, vocab_size)
-        self.out.weight = emb.weight
+    
 
     def forward(self, x, state):
         outs, state = self.lstm(self.emb(x), state)
