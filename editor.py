@@ -21,6 +21,8 @@ from autocorrect import correct
 # a word (space, newline, punctuation) ends the word and triggers a check.
 WORD_RE = re.compile(r"[\w'’]+$")
 
+BROWN = "#a86f3b"  # header and body text colour
+
 
 def is_word_boundary(event) -> bool:
     if event.keysym in ("space", "Return", "KP_Enter", "Tab"):
@@ -37,14 +39,11 @@ class Editor:
         root.title("Crema")
         root.geometry("800x600")
 
-        # Default font family, a few points bigger; padding keeps the text
-        # away from the window edges so it reads as a column in the middle.
-        font = tkfont.nametofont("TkFixedFont")
-        font.configure(size=14)
+        font = ("Courier New", 14)
         # Header: coffee + name, top left, coffee-brown.
         header_font = tkfont.nametofont("TkDefaultFont").copy()
         header_font.configure(size=13, weight="bold")
-        tk.Label(root, text="\u2615 Crema", font=header_font, fg="#a86f3b",
+        tk.Label(root, text="\u2615 Crema", font=header_font, fg=BROWN,
                  anchor="w", padx=12, pady=12).pack(fill="x")
         # "systemGridColor" is a subtle line in both light and dark mode.
         tk.Frame(root, height=1, bg="systemGridColor").pack(fill="x")
@@ -52,6 +51,7 @@ class Editor:
         # The text lives in a fixed-width box centred under the header, with a
         # 1px border. `width` is in characters of the font above.
         self.text = tk.Text(root, wrap="word", undo=True, font=font, width=64,
+                            fg=BROWN, insertbackground=BROWN,  # text and cursor
                             padx=30, pady=24, highlightthickness=1,
                             highlightbackground="systemGridColor",
                             highlightcolor="systemGridColor")
