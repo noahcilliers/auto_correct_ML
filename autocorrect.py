@@ -10,9 +10,15 @@ moment you type a space, newline or punctuation mark right after it.
 
 Return the corrected word, or None to leave it alone.
 
+Words the dictionary already knows never reach the model: correct() bails
+out early via spellcheck.is_misspelled(), so the expensive part only runs
+on words that are actually wrong.
+
 Replace the body of correct() with your model. If your model is slow to
 load, load it once at module level (here), not inside correct().
 """
+
+from spellcheck import is_misspelled
 
 # Placeholder so the editor visibly does something out of the box.
 _TYPOS = {
@@ -25,6 +31,9 @@ _TYPOS = {
 
 
 def correct(word: str, context: str) -> str | None:
+    if not is_misspelled(word, context):
+        return None  # spelt fine (or a name / acronym / code); leave it alone
+
     fixed = _TYPOS.get(word.lower())
     if fixed is None:
         return None

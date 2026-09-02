@@ -24,8 +24,26 @@ The editor itself has no dependencies beyond `tkinter`, which the `tk` package i
 
 | File | What it is |
 |---|---|
-| `editor.py` | The window. A small header and a single plain `Text` widget, nothing else. Detects when a word is finished and calls the hook. Don't need to touch this. |
+| `editor.py` | The window. A small header and a single plain `Text` widget, nothing else. Detects when a word is finished and calls the hook. Underlines misspelled words. Don't need to touch this. |
 | `autocorrect.py` | **Your ML goes here.** One function: `correct(word, context) -> str | None`. |
+| `spellcheck.py` | Dictionary lookup. `is_misspelled(word, context)` decides *whether* a word is wrong; it never fixes anything. Also `frequency(word)` for ranking candidates and `add_word(word)` for a personal dictionary. |
+| `data/en_words.txt` | The wordlist: SymSpell's English frequency dictionary, ~83k words with corpus counts (MIT). |
+| `data/personal_words.txt` | Optional, one word per line. Words you never want flagged. Created by `add_word()`. |
+
+## Spell check
+
+Every word in the document is checked against the dictionary shortly after
+each edit, and misspelled ones get a cream underline. The word under the
+cursor is left alone until you finish typing it.
+
+The check is deliberately conservative. It skips one-letter words, anything
+with a digit, ALL-CAPS acronyms, and Capitalised words mid-sentence (almost
+always names). Possessives and common contractions pass. Real-word errors
+("form" for "from") are not caught; that needs context and is a job for the
+model later.
+
+`correct()` uses the same check as a gate, so the model only ever sees words
+the dictionary doesn't know.
 
 ## The hook
 
