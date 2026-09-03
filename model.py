@@ -14,7 +14,6 @@ import re
 # relatively simple. given a word list of this long. This is what we want to find
 
 CHAR_EMB_DIM= 16
-WORD_EMB_DIM = 20 * CHAR_EMB_DIM
 
 #
 # OK lets get the data in now
