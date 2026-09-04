@@ -3,7 +3,7 @@ import sys
 import random
 from torch import nn
 import torch.nn.functional as F
-from data import SOS, EOS, VOCAB_SIZE  # word lists, corruption and batches live in data.py
+from data import synthetic, norvig, encode, decode, PAD, SOS, EOS, VOCAB_SIZE
 
 
 # ok so how are we going to transform this long list into an actual voacabullary???
@@ -14,9 +14,9 @@ from data import SOS, EOS, VOCAB_SIZE  # word lists, corruption and batches live
 CHAR_EMB_DIM= 16
 
 #
-# data comes from data.py: synthetic() for corrupted en_words, norvig() for the
-# real (train, val) split, batches()/mixed_batches() to iterate, encode() to
-# turn a batch into padded id lists.
+# the data is two lists of (wrong, right) pairs from data.py: synthetic() for
+# corrupted en_words and norvig() for the real (train, val) split. batching
+# lives below, next to the training code.
 #
 
 #so we can use a lstm to encode the meaning of the input sequence into some hidden units
@@ -172,34 +172,84 @@ class Seq2Seq(nn.Module):   # owns the shared embedding, wires enc -> dec
 
 CHECKPOINT = ""
 
-def __train__(model, device, train_dataset, valid_dataset, optimizer, epochs, seq_len, batch_size, cont):
+
+# ------------------------------------------------------------------- batching
+#
+# The lists from data.py are plain (wrong, right) pairs. These turn them into
+# batches, and to_tensors() into padded tensors. Padding is per batch, to the
+# longest word in it, so there is no fixed seq_len.
+
+def batches(pairs, size, seed=None):
+    """One shuffled pass over `pairs`, yielding lists of `size` (the last may be short)."""
+    order = list(range(len(pairs)))
+    random.Random(seed).shuffle(order)
+    for i in range(0, len(order), size):
+        yield [pairs[j] for j in order[i:i + size]]
+
+
+def grab(pairs, size, rng=random):
+    """A single random batch of `size` distinct pairs."""
+    return rng.sample(pairs, size)
+
+
+def mixed_batches(synth, norvig_train, size, norvig_frac=0.3, seed=None):
+    """
+    Phase-2 batches: one shuffled pass over `synth`, each batch topped up to
+    `size` with `norvig_frac` of Norvig pairs drawn at random (with replacement).
+    """
+    rng = random.Random(seed)
+    n_norvig = round(size * norvig_frac)
+    for chunk in batches(synth, size - n_norvig, seed=rng.random()):
+        batch = chunk + rng.choices(norvig_train, k=n_norvig)
+        rng.shuffle(batch)
+        yield batch
+
+
+def to_tensors(batch, device):
+    """
+    A list of (wrong, right) pairs -> (src, tgt_in, tgt_out) long tensors on
+    `device`, each [B, T] padded with PAD. Mask with `!= PAD`, and give the
+    loss ignore_index=PAD so padded positions of tgt_out don't count.
+    """
+    src, tgt_in, tgt_out = encode(batch)
+    return (torch.tensor(src, device=device),
+            torch.tensor(tgt_in, device=device),
+            torch.tensor(tgt_out, device=device))
+
+
+# ------------------------------------------------------------------- training
+
+def __train__(model, device, synth, norvig_train, norvig_val, optimizer, epochs, batch_size, cont):
+    # phase 1:  for batch in batches(synth, batch_size): ...
+    # phase 2:  for batch in mixed_batches(synth, norvig_train, batch_size): ...
+    # validate: for batch in batches(norvig_val, batch_size, seed=0): ...
+    # each batch goes through to_tensors(batch, device) first.
     pass
 
-def train(cont, vocab_size=26, embedding_dim=CHAR_EMB_DIM, hidden_dim=256):
+
+def train(cont, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256):
     # this function will create or grab the model and then set all the proper parameters
-    # for the training 
+    # for the training
     device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
-    model = Seq2Seq(vocab_size, embedding_dim, hidden_dim, emb).to(device)
+    model = Seq2Seq(vocab_size, embedding_dim, hidden_dim).to(device)
 
     if cont:
         model.load_state_dict(torch.load(CHECKPOINT, map_location=device))
-    
+
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    epoch = 10
-    #max letters ~ 20
-    seq_len = 21
+    epochs = 10
     batch_size = 64
 
+    # the datasets: lists of (wrong, right) pairs
+    synth = synthetic(500_000)            # phase 1, and 70% of each phase-2 batch
+    norvig_train, norvig_val = norvig()   # the 30% mix-in, and what we validate on
 
-    
-    __train__(model, device, train_data, valid_data, optimizer, epoch, seq_len, batch_size, cont)
+    __train__(model, device, synth, norvig_train, norvig_val, optimizer, epochs, batch_size, cont)
 
 
 def main():
     pass
-
-
 
 
 if __name__ == "__main__":

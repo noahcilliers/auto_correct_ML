@@ -1,13 +1,14 @@
 """
 Training data for the autocorrect model: lists of (wrong, right) word pairs.
 
-    from data import synthetic, norvig, batches, mixed_batches, grab, encode
+    from data import synthetic, norvig, encode
 
     synth = synthetic(500_000)           # en_words.txt words with random edits
     train, val = norvig()                # real misspellings, split by correct word
+    src, tgt_in, tgt_out = encode(synth[:64])   # padded id lists for a batch
 
-    for batch in batches(synth, 64):     # one shuffled pass, lists of (wrong, right)
-        src, tgt_in, tgt_out = encode(batch)
+Batching lives in model.py next to the training code; this module only makes
+the lists.
 
 Rules from DATA_PLAN.md, applied to every pair: lowercase, `^[a-z][a-z']*[a-z]$`,
 2-20 letters, the right side must be a dictionary word, the wrong side must not
@@ -184,34 +185,6 @@ def norvig(val_frac: float = 0.2, seed: int = 0) -> tuple[list[tuple[str, str]],
     return train, val
 
 
-# ------------------------------------------------------------------- batches
-
-def batches(pairs, size: int, seed=None):
-    """One shuffled pass over `pairs`, yielding lists of `size` (the last may be short)."""
-    order = list(range(len(pairs)))
-    random.Random(seed).shuffle(order)
-    for i in range(0, len(order), size):
-        yield [pairs[j] for j in order[i:i + size]]
-
-
-def grab(pairs, size: int, rng=random):
-    """A single random batch of `size` distinct pairs."""
-    return rng.sample(pairs, size)
-
-
-def mixed_batches(synth, norvig_train, size: int, norvig_frac: float = 0.3, seed=None):
-    """
-    Phase-2 batches: one shuffled pass over `synth`, with each batch topped up to
-    `size` by `norvig_frac` of Norvig pairs drawn at random (with replacement).
-    """
-    rng = random.Random(seed)
-    n_norvig = round(size * norvig_frac)
-    for chunk in batches(synth, size - n_norvig, seed=rng.random()):
-        batch = chunk + rng.choices(norvig_train, k=n_norvig)
-        rng.shuffle(batch)
-        yield batch
-
-
 if __name__ == "__main__":
     import time
 
@@ -229,7 +202,7 @@ if __name__ == "__main__":
     print(f"synthetic: {len(synth)} pairs  ({time.perf_counter() - t:.1f}s)")
     print("  ", synth[:6])
 
-    batch = grab(synth, 3)
+    batch = random.sample(synth, 3)
     src, tgt_in, tgt_out = encode(batch)
     print("batch:  ", batch)
     print("src:    ", src)
