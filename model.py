@@ -179,7 +179,7 @@ CHECKPOINT = ""
 # batches, and to_tensors() into padded tensors. Padding is per batch, to the
 # longest word in it, so there is no fixed seq_len.
 
-def batches(pairs, size, seed=None):
+def make_batches(pairs, size, seed=None):
     """One shuffled pass over `pairs`, yielding lists of `size` (the last may be short)."""
     order = list(range(len(pairs)))
     random.Random(seed).shuffle(order)
@@ -221,10 +221,29 @@ def to_tensors(batch, device):
 
 def __train__(model, device, synth, norvig_train, norvig_val, optimizer, epochs, batch_size, cont):
     # phase 1:  for batch in batches(synth, batch_size): ...
+    model.train()
+    for e in range(epochs):
+        batches = make_batches(synth, batch_size)
+        for batch in batches:
+            #run through the network
+            src, tgt_in, tgt_out = to_tensors(batch, device)
+            optimizer.zero_grad()
+            # preds
+            logits = model(src, tgt_in)
+            # loss
+            loss = F.cross_entropy(logits.reshape(-1, VOCAB_SIZE), tgt_out.reshape(-1), ignore_index=PAD)
+            # backprop
+            loss.backward()
+            #apply grads
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            # back prop
+
     # phase 2:  for batch in mixed_batches(synth, norvig_train, batch_size): ...
     # validate: for batch in batches(norvig_val, batch_size, seed=0): ...
     # each batch goes through to_tensors(batch, device) first.
-    pass
+    return 0
+
 
 
 def train(cont, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256):
@@ -244,12 +263,13 @@ def train(cont, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=25
     # the datasets: lists of (wrong, right) pairs
     synth = synthetic(500_000)            # phase 1, and 70% of each phase-2 batch
     norvig_train, norvig_val = norvig()   # the 30% mix-in, and what we validate on
-
+    
     __train__(model, device, synth, norvig_train, norvig_val, optimizer, epochs, batch_size, cont)
 
 
 def main():
-    pass
+    synth = synthetic(100)
+    print(synth)
 
 
 if __name__ == "__main__":
