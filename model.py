@@ -147,7 +147,7 @@ class Decoder(nn.Module):
 
 
 class Seq2Seq(nn.Module):   # owns the shared embedding, wires enc -> dec
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, emb):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim):
         super().__init__()
         emb = nn.Embedding(vocab_size, embedding_dim)
         self.encoder = Encoder(embedding_dim, hidden_dim, emb, num_layers=4)
@@ -181,3 +181,38 @@ class Seq2Seq(nn.Module):   # owns the shared embedding, wires enc -> dec
         return torch.cat(out, 1)
 
 
+
+CHECKPOINT = ""
+
+def __train__(model, device, train_dataset, valid_dataset, optimizer, epochs, seq_len, batch_size, cont):
+    pass
+
+def train(cont, vocab_size=26, embedding_dim=CHAR_EMB_DIM, hidden_dim=256):
+    # this function will create or grab the model and then set all the proper parameters
+    # for the training 
+    device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
+    model = Seq2Seq(vocab_size, embedding_dim, hidden_dim, emb).to(device)
+
+    if cont:
+        model.load_state_dict(torch.load(CHECKPOINT, map_location=device))
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+    epoch = 10
+    #max letters ~ 20
+    seq_len = 21
+    batch_size = 64
+
+
+    
+    __train__(model, device, train_data, valid_data, optimizer, epoch, seq_len, batch_size, cont)
+
+
+def main():
+    pass
+
+
+
+
+if __name__ == "__main__":
+    main()
