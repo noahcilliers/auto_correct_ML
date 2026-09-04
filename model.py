@@ -1,11 +1,9 @@
 import torch
-import numpy as np
 import sys
 import random
 from torch import nn
 import torch.nn.functional as F
-from spellcheck import FREQUENCIES
-import re
+from data import SOS, EOS, VOCAB_SIZE  # word lists, corruption and batches live in data.py
 
 
 # ok so how are we going to transform this long list into an actual voacabullary???
@@ -16,20 +14,10 @@ import re
 CHAR_EMB_DIM= 16
 
 #
-# OK lets get the data in now
+# data comes from data.py: synthetic() for corrupted en_words, norvig() for the
+# real (train, val) split, batches()/mixed_batches() to iterate, encode() to
+# turn a batch into padded id lists.
 #
-ok = re.compile(r"^[a-z][a-z']*[a-z]$")
-pairs = [(w, c) for w, c in FREQUENCIES.items() if ok.match(w) and 2 <= len(w) <= 20]
-words = [w for w, _ in pairs]                          # list of ~83k str
-weights = np.array([c for _, c in pairs], dtype=np.float64) ** 0.4
-weights /= weights.sum()
-
-rng = np.random.default_rng(0)
-idx = rng.permutation(len(words))
-cut = int(len(words) * 0.95)
-
-# list of indeces which are the data we have for training and testing
-train_idx, val_idx = idx[:cut], idx[cut:]
 
 #so we can use a lstm to encode the meaning of the input sequence into some hidden units
 # and then decoder will take that sequence and output it
