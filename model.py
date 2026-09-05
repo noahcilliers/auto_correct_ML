@@ -113,8 +113,8 @@ class Encoder(nn.Module):
         self.emb = emb
 
     def forward(self, x):
-        _, state = self.lstm(self.emb(x))
-        return state
+        outs, state = self.lstm(self.emb(x))
+        return outs, state
 
 
 
@@ -123,12 +123,20 @@ class Decoder(nn.Module):
         super().__init__()
         self.emb = emb
         self.lstm = StackedLSTM(embedding_dim, hidden_dim, num_layers)
+        self.attn == nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.out = nn.Linear(hidden_dim, vocab_size)
     
 
-    def forward(self, x, state):
-        outs, state = self.lstm(self.emb(x), state)
-        logits = self.out(outs)
+    def forward(self, x, state, enc_outs, src_mask):
+        # get the current hidden and states from the first input
+        h, state = self.lstm(self.emb(x), state)
+        # here we create the scores and add the new attention context
+        scores = self.attn(h) @ enc_outs.transpose(1, 2)
+        
+        scores = scores.masked_fill(~src_mask[:, None, :], float("-inf"))
+        context = scores.softmax(-1) @ enc_outs
+
+        logits = self.out(torch.cat([h, context], -1))
         return logits, state
 
 
@@ -146,10 +154,11 @@ class Seq2Seq(nn.Module):   # owns the shared embedding, wires enc -> dec
     # this forward pass is for training only. For generation we need to make a different 
     # function. Since the previous input must be used instead of an array
     def forward(self, src, tgt_in):
+        src_mask = src != PAD
         # run the loop for encoder
-        state = self.encoder(src)
+        outs, state = self.encoder(src)
         # run the loop for decoder
-        logits, _ = self.decoder(tgt_in, state)
+        logits, _ = self.decoder(tgt_in, state, outs)
         return logits
 
 
@@ -263,7 +272,7 @@ def __train__(model, device, synth, norvig_train, norvig_val, optimizer, epochs,
     return best
 
 
-def train(cont, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256):
+def train(cont, epochs, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256):
     # this function will create or grab the model and then set all the proper parameters
     # for the training
     device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
@@ -274,7 +283,7 @@ def train(cont, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=25
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    epochs = 10
+  
     batch_size = 64
 
     # the datasets: lists of (wrong, right) pairs
@@ -295,14 +304,24 @@ def main():
 
     args = parser.parse_args()
 
+    if args.cont is not None and args.cont == "y" :
+        cont = 1
+    else:
+        cont = 0
+    
 
 
     if args.process == "train":
-        train(cont, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256)
+        if args.epochs is None:
+            print("You must set --epochs for training")
+            return
+        train(cont, args.epochs, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256)
     elif args.process == "test":
         print("Testing not implemented yet")
     elif args.process == "auto_correct":
         print("Auto correct not implemented yet")
+    else:
+        print('You must set --process to "train", "test", or "auto_correct"')
 
 
 

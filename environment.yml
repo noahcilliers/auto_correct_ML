@@ -4,3 +4,7 @@ channels:
 dependencies:
   - python=3.12
   - tk
+  - pip
+  - pip:
+      - torch
+      - numpy
