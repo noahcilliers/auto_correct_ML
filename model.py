@@ -1,6 +1,7 @@
 import torch
 import sys
 import random
+import argparse
 from torch import nn
 import torch.nn.functional as F
 from data import synthetic, norvig, encode, decode, PAD, SOS, EOS, VOCAB_SIZE
@@ -170,7 +171,7 @@ class Seq2Seq(nn.Module):   # owns the shared embedding, wires enc -> dec
 
 
 
-CHECKPOINT = ""
+CHECKPOINT = "BEST_MODEL"
 
 
 # ------------------------------------------------------------------- batching
@@ -286,11 +287,23 @@ def train(cont, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=25
 
 
 
-
-
 def main():
-    synth = synthetic(100)
-    print(synth)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--process", type=str)
+    parser.add_argument("--cont", type=str)
+    parser.add_argument("--epochs", type=int)
+
+    args = parser.parse_args()
+
+
+
+    if args.process == "train":
+        train(cont, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256)
+    elif args.process == "test":
+        print("Testing not implemented yet")
+    elif args.process == "auto_correct":
+        print("Auto correct not implemented yet")
+
 
 
 if __name__ == "__main__":
