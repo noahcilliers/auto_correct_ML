@@ -199,7 +199,7 @@ def mixed_batches(synth, norvig_train, size, norvig_frac=0.3, seed=None):
     """
     rng = random.Random(seed)
     n_norvig = round(size * norvig_frac)
-    for chunk in batches(synth, size - n_norvig, seed=rng.random()):
+    for chunk in make_batches(synth, size - n_norvig, seed=rng.random()):
         batch = chunk + rng.choices(norvig_train, k=n_norvig)
         rng.shuffle(batch)
         yield batch
@@ -219,31 +219,47 @@ def to_tensors(batch, device):
 
 # ------------------------------------------------------------------- training
 
-def __train__(model, device, synth, norvig_train, norvig_val, optimizer, epochs, batch_size, cont):
-    # phase 1:  for batch in batches(synth, batch_size): ...
+def run_epoch(model, device, batch_iter, optimizer):
     model.train()
-    for e in range(epochs):
-        batches = make_batches(synth, batch_size)
-        for batch in batches:
-            #run through the network
-            src, tgt_in, tgt_out = to_tensors(batch, device)
-            optimizer.zero_grad()
-            # preds
-            logits = model(src, tgt_in)
-            # loss
-            loss = F.cross_entropy(logits.reshape(-1, VOCAB_SIZE), tgt_out.reshape(-1), ignore_index=PAD)
-            # backprop
-            loss.backward()
-            #apply grads
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            # back prop
+    total, steps = 0.0, 0
+    for batch in batch_iter:
+        src, tgt_in, tgt_out = to_tensors(batch, device)
+        optimizer.zero_grad()
+        logits = model(src, tgt_in)
+        loss = F.cross_entropy(logits.reshape(-1, VOCAB_SIZE),
+                               tgt_out.reshape(-1), ignore_index=PAD)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        total += loss.item(); steps += 1
+    return total / steps
 
-    # phase 2:  for batch in mixed_batches(synth, norvig_train, batch_size): ...
-    # validate: for batch in batches(norvig_val, batch_size, seed=0): ...
-    # each batch goes through to_tensors(batch, device) first.
-    return 0
+@torch.no_grad()
+def evaluate(model, pairs, device):
+    model.eval()
+    hits = 0
+    for wrong, right in pairs:
+        src, _, _ = to_tensors([(wrong, right)], device)
+        hits += decode(model.generate(src)[0]) == right
+    return hits / len(pairs)
 
+
+def __train__(model, device, synth, norvig_train, norvig_val, optimizer, epochs, batch_size, cont):
+    best = 0.0
+    phases = [("synthetic", lambda: make_batches(synth, batch_size), 1e-3),
+              ("mixed", lambda: mixed_batches(synth, norvig_train, batch_size), 3e-4)]
+    for name, make_iter, lr in phases:
+        for g in optimizer.param_groups:
+            g["lr"] = lr
+        for epoch in range(epochs):
+            loss = run_epoch(model, device, make_iter(), optimizer)
+            acc = evaluate(model, norvig_val, device)
+            print(f"{name} epoch {epoch}: loss {loss:.3f}  val acc {acc:.3f}")
+            if acc <= best:
+                break                      # stopped improving, on to the next phase
+            best = acc
+            torch.save(model.state_dict(), CHECKPOINT)
+    return best
 
 
 def train(cont, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256):
@@ -265,6 +281,11 @@ def train(cont, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=25
     norvig_train, norvig_val = norvig()   # the 30% mix-in, and what we validate on
     
     __train__(model, device, synth, norvig_train, norvig_val, optimizer, epochs, batch_size, cont)
+
+
+
+
+
 
 
 def main():
