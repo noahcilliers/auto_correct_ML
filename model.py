@@ -112,8 +112,8 @@ class Encoder(nn.Module):
         self.lstm = StackedLSTM(embedding_dim, hidden_dim, num_layers)
         self.emb = emb
 
-    def forward(self, x):
-        outs, state = self.lstm(self.emb(x))
+    def forward(self, x, mask):
+        outs, state = self.lstm(self.emb(x), mask=mask)
         return outs, state
 
 
@@ -123,8 +123,8 @@ class Decoder(nn.Module):
         super().__init__()
         self.emb = emb
         self.lstm = StackedLSTM(embedding_dim, hidden_dim, num_layers)
-        self.attn == nn.Linear(hidden_dim, hidden_dim, bias=False)
-        self.out = nn.Linear(hidden_dim, vocab_size)
+        self.attn = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.out = nn.Linear(2 * hidden_dim, vocab_size)
     
 
     def forward(self, x, state, enc_outs, src_mask):
@@ -147,8 +147,8 @@ class Seq2Seq(nn.Module):   # owns the shared embedding, wires enc -> dec
     def __init__(self, vocab_size, embedding_dim, hidden_dim):
         super().__init__()
         emb = nn.Embedding(vocab_size, embedding_dim)
-        self.encoder = Encoder(embedding_dim, hidden_dim, emb, num_layers=4)
-        self.decoder = Decoder(embedding_dim, vocab_size, hidden_dim, emb, num_layers=4)
+        self.encoder = Encoder(embedding_dim, hidden_dim, emb, num_layers=2)
+        self.decoder = Decoder(embedding_dim, vocab_size, hidden_dim, emb, num_layers=2)
 
     # can we input the entire sequence into the forward pass
     # this forward pass is for training only. For generation we need to make a different 
@@ -156,27 +156,26 @@ class Seq2Seq(nn.Module):   # owns the shared embedding, wires enc -> dec
     def forward(self, src, tgt_in):
         src_mask = src != PAD
         # run the loop for encoder
-        outs, state = self.encoder(src)
+        outs, state = self.encoder(src, src_mask)
         # run the loop for decoder
-        logits, _ = self.decoder(tgt_in, state, outs)
+        logits, _ = self.decoder(tgt_in, state, outs, src_mask)
         return logits
 
 
     # generate one sequence
     @torch.no_grad()
-    def generate(self, src, max_len=100):
-        # get the state with the encoder
-        state = self.encoder(src)
+    def generate(self, src, max_len=22):
+        src_mask = src != PAD
+        enc_outs, state = self.encoder(src, src_mask)
         tok = torch.full((src.size(0), 1), SOS, device=src.device)
         out = []
         # run until decoder says <eos>
         for _ in range(max_len):
-            logits, state = self.decoder(tok, state)      # [B, 1, V]
-            tok = logits[:, -1].argmax(-1, keepdim=True)  # [B, 1]
+            logits, state = self.decoder(tok, state, enc_outs, src_mask)   # [B, 1, V]
+            tok = logits[:, -1].argmax(-1, keepdim=True)                   # [B, 1]
             if tok.item() == EOS: break
             out.append(tok)
-            #output the tensor of outputs 
-        return torch.cat(out, 1)
+        return torch.cat(out, 1) if out else tok[:, :0]
 
 
 
@@ -275,7 +274,8 @@ def __train__(model, device, synth, norvig_train, norvig_val, optimizer, epochs,
 def train(cont, epochs, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256):
     # this function will create or grab the model and then set all the proper parameters
     # for the training
-    device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
+    #device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
+    device = "cpu"
     model = Seq2Seq(vocab_size, embedding_dim, hidden_dim).to(device)
 
     if cont:
