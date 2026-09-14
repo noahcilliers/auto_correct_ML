@@ -14,28 +14,43 @@ Words the dictionary already knows never reach the model: correct() bails
 out early via spellcheck.is_misspelled(), so the expensive part only runs
 on words that are actually wrong.
 
-Replace the body of correct() with your model. If your model is slow to
-load, load it once at module level (here), not inside correct().
+The model is the character seq2seq from model.py. It is loaded once here,
+at import, from BEST_MODEL next to this file, because correct() runs on the
+UI thread and must stay well under ~50 ms per word.
 """
+from pathlib import Path
 
-from spellcheck import is_misspelled
+import torch
 
-# Placeholder so the editor visibly does something out of the box.
-_TYPOS = {
-    "teh": "the",
-    "adn": "and",
-    "recieve": "receive",
-    "seperate": "separate",
-    "definately": "definitely",
-}
+from data import STOI, decode, usable, VOCAB_SIZE
+from model import Seq2Seq, CHAR_EMB_DIM, CHECKPOINT
+from spellcheck import is_known, is_misspelled, normalize
+
+_DEVICE = "cpu"
+_model = Seq2Seq(VOCAB_SIZE, CHAR_EMB_DIM, 256).to(_DEVICE)   # same shape as train()/test()
+_model.load_state_dict(torch.load(Path(__file__).resolve().parent / CHECKPOINT,
+                                  map_location=_DEVICE))
+_model.eval()  # dropout off
+
+
+def predict(word: str) -> str:
+    """The model's guess for a lowercase a-z word: decode(generate(encode(word)))."""
+    src = torch.tensor([[STOI[c] for c in word]], device=_DEVICE)
+    return decode(_model.generate(src)[0])
 
 
 def correct(word: str, context: str) -> str | None:
     if not is_misspelled(word, context):
         return None  # spelt fine (or a name / acronym / code); leave it alone
 
-    fixed = _TYPOS.get(word.lower())
-    if fixed is None:
+    w = normalize(word).lower()
+    if not usable(w):
+        return None  # not plain a-z, or too long: nothing the model was trained on
+
+    fixed = predict(w)
+    # The inference guard from DATA_PLAN.md: only ever show a dictionary word.
+    # This also swallows the model's copy-through misses, since `w` isn't one.
+    if not is_known(fixed):
         return None
     if word[0].isupper():
         fixed = fixed.capitalize()
