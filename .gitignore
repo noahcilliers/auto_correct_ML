@@ -20,3 +20,4 @@ venv/
 # data/
 # *.pt
 # *.bin
+BEST_MODEL
