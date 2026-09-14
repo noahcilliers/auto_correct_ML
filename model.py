@@ -5,6 +5,7 @@ import argparse
 from torch import nn
 import torch.nn.functional as F
 from data import synthetic, norvig, encode, decode, PAD, SOS, EOS, VOCAB_SIZE
+from spellcheck import is_known
 
 
 # ok so how are we going to transform this long list into an actual voacabullary???
@@ -294,6 +295,57 @@ def train(cont, epochs, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidde
 
 
 
+# -------------------------------------------------------------------- testing
+#
+# Word-level exact match, the metric from DATA_PLAN.md, on the same kinds of
+# lists the training used. Also the inference guard from the plan: the editor
+# will only show the model's output if it is a dictionary word, so `shown` is
+# how often that happens and `shown acc` is how often what gets shown is right.
+
+@torch.no_grad()
+def __test__(model, device, synth, norvig_train, norvig_val, examples=6, seed=0):
+    model.eval()
+    rng = random.Random(seed)
+    sets = [("synthetic (fresh)", synth),
+            ("norvig train (seen)", norvig_train),
+            ("norvig val (held out)", norvig_val)]
+    results = {}
+    for name, pairs in sets:
+        rows = []                                   # (wrong, right, predicted)
+        for wrong, right in pairs:
+            src, _, _ = to_tensors([(wrong, right)], device)
+            rows.append((wrong, right, decode(model.generate(src)[0])))
+        hits = sum(p == r for _, r, p in rows)
+        shown = [row for row in rows if is_known(row[2])]
+        shown_hits = sum(p == r for _, r, p in shown)
+        acc = hits / len(rows)
+        print(f"{name}: acc {acc:.3f}  shown {len(shown) / len(rows):.3f}  "
+              f"shown acc {shown_hits / max(len(shown), 1):.3f}  ({len(rows)} pairs)")
+        for wrong, right, pred in rng.sample(rows, min(examples, len(rows))):
+            print(f"    {'ok  ' if pred == right else 'MISS'} '{wrong}' -> '{pred}'  (want '{right}')")
+        results[name] = acc
+    return results
+
+
+def test(vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256):
+    # this function grabs the best model from training and runs it over the
+    # data. no optimizer, no epochs: one pass, print the numbers.
+    device = "cpu"
+    model = Seq2Seq(vocab_size, embedding_dim, hidden_dim).to(device)
+    model.load_state_dict(torch.load(CHECKPOINT, map_location=device))
+
+    # the datasets: lists of (wrong, right) pairs, as in train() but smaller.
+    # synthetic gets a new seed so the corruptions are ones the model never
+    # saw (training used seed 0), and no clean pairs since the editor never
+    # sends a known word to the model. norvig train is the 30% mix-in, so it
+    # is the "seen" row: a sample of its distinct pairs, since the repeats only
+    # exist to weight training. norvig val is what the checkpoint was picked on.
+    synth = synthetic(5_000, seed=1, clean_frac=0)
+    norvig_train, norvig_val = norvig()
+    norvig_train = random.Random(0).sample(sorted(set(norvig_train)), 5_000)
+
+    return __test__(model, device, synth, norvig_train, norvig_val)
+
 
 
 def main():
@@ -317,7 +369,7 @@ def main():
             return
         train(cont, args.epochs, vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256)
     elif args.process == "test":
-        print("Testing not implemented yet")
+        test(vocab_size=VOCAB_SIZE, embedding_dim=CHAR_EMB_DIM, hidden_dim=256)
     elif args.process == "auto_correct":
         print("Auto correct not implemented yet")
     else:
